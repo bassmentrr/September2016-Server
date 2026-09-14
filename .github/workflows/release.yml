@@ -1,0 +1,65 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'README.md'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.x'
+
+      - name: Get next version
+        id: version
+        shell: bash
+        run: |
+          latest=$(git tag -l 'v1.*.0' --sort=-v:refname | head -n 1)
+
+          if [ -z "$latest" ]; then
+            version="v1.0.0"
+          else
+            minor=$(echo "$latest" | cut -d. -f2)
+            minor=$((minor + 1))
+            version="v1.${minor}.0"
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building $version"
+
+      - name: Restore
+        run: dotnet restore --runtime win-x64
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore --runtime win-x64
+
+      - name: Publish
+        run: dotnet publish --configuration Release --no-build --runtime win-x64 --self-contained true --output ./publish
+
+      - name: Create ZIP
+        run: |
+          cd publish
+          zip -r ../bassment-server.zip .
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: bassment server ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: bassment-server.zip
